@@ -108,17 +108,23 @@ D:\lablab.ai\procureflow-ai\
 - [ ] Read Band docs: agent API, rooms, context exchange, SDK setup
 - [ ] Claim AI/ML API credits from lablab.ai dashboard
 - [ ] Claim Featherless AI promo code `BOA26`
-- [ ] Set up project scaffold (folders, .env, requirements.txt)
+- [x] Set up project scaffold (folders, .env, requirements.txt)
 
 ### Day 2 — Saturday June 14
-- [ ] Build + test `@Intake` agent (TASK-01 → TASK-03)
-- [ ] Build + test `@RiskAgent` (TASK-04 → TASK-05)
+- [ ] Build + test `@Intake` agent
+- [ ] Build + test `@RiskAgent`
 
 ### Day 3 — Sunday June 15
-- [ ] Build + test `@PolicyAgent` (TASK-06 → TASK-07)
-- [ ] Build + test `@ApprovalAgent` (TASK-08 → TASK-09)
+- [ ] Build + test `@PolicyAgent`
+- [ ] Build + test `@ApprovalAgent`
 
-### Day 4 — Monday June 16
+### Day 4 — Monday June 16 (TODAY)
+- [ ] Build Band SDK connection (TASK-02)
+- [ ] Build + test `@Intake` agent (TASK-03)
+- [ ] Build AI/ML API client → updated to OpenRouter (TASK-04)
+- [ ] Build + test `@RiskAgent` (TASK-05)
+- [ ] Build Policy Rules + `@PolicyAgent` (TASK-06 → TASK-07)
+- [ ] Build Audit Packet + `@ApprovalAgent` (TASK-08 → TASK-09)
 - [ ] Wire all 4 agents in full Band room flow (TASK-10)
 - [ ] Build Supabase schema + logging (TASK-11)
 - [ ] Build FastAPI backend (TASK-12)
