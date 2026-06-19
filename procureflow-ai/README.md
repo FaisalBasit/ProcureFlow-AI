@@ -204,6 +204,7 @@ Use this order in the final video:
 | GET | `/api/procurement/band/status` | Band credential and room readiness |
 | POST | `/api/procurement/submit-and-process` | Submit request and run full agent pipeline |
 | GET | `/api/procurement/requests` | List requests |
+| GET | `/api/procurement/requests/pending-approvals` | List approval-ready requests with agent logs |
 | GET | `/api/procurement/requests/{id}` | Request details with logs and decision |
 | GET | `/api/procurement/requests/{id}/status` | Current status and agent actions |
 | GET | `/api/procurement/requests/{id}/audit` | Final audit packet |

@@ -20,6 +20,11 @@ from backend.db.supabase_client import SupabaseDBClient
 from backend.services.band_client import BandClient, BandClientError
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
+APPROVAL_STATUSES = {
+    "awaiting_approval",
+    "pending_approval",
+    "flagged_for_review",
+}
 
 
 class PurchaseRequest(BaseModel):
@@ -113,6 +118,44 @@ async def list_requests(status: Optional[str] = None):
     try:
         requests = await db_client.list_requests(status=status)
         return {"requests": requests}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/requests/pending-approvals")
+async def list_pending_approvals():
+    """List approval-ready requests with logs and decision state in one call."""
+    try:
+        rows = await db_client.list_requests_with_activity(
+            statuses=list(APPROVAL_STATUSES),
+            include_decisions=False,
+        )
+        approval_requests = []
+
+        for row in rows:
+            request = row["request"]
+            logs = row["agent_logs"]
+            decision = row["decision"]
+            has_approval_summary = any(
+                log.get("agent_name") == "ApprovalAgent"
+                and log.get("action") == "approval_summary_generated"
+                for log in logs
+            )
+
+            if decision:
+                continue
+            if request.get("status") not in APPROVAL_STATUSES and not has_approval_summary:
+                continue
+
+            approval_requests.append(
+                {
+                    **request,
+                    "agent_logs": logs,
+                    "decision": decision,
+                }
+            )
+
+        return {"requests": approval_requests}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

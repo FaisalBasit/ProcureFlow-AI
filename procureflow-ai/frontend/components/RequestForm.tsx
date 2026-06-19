@@ -40,7 +40,7 @@ export default function RequestForm({ onSubmit, loading }: RequestFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="card">
-      <h2 className="card-title">📋 New Purchase Request</h2>
+      <h2 className="card-title">New Purchase Request</h2>
 
       <div className="form-group">
         <label className="form-label" htmlFor="vendorName">
@@ -119,7 +119,7 @@ export default function RequestForm({ onSubmit, loading }: RequestFormProps) {
             Processing...
           </>
         ) : (
-          "🚀 Submit Request"
+          "Submit Request"
         )}
       </button>
     </form>

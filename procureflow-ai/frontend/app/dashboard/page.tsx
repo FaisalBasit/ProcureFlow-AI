@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AuditPacket from "@/components/AuditPacket";
+import { fetchJson } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const POLL_INTERVAL_MS = 10000;
 
 interface RequestSummary {
   id: string;
@@ -20,42 +22,44 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [auditData, setAuditData] = useState<Record<string, unknown> | null>(null);
   const [filter, setFilter] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const requestInFlight = useRef(false);
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
+    if (requestInFlight.current) return;
+
+    requestInFlight.current = true;
     try {
-      const res = await fetch(
+      const data = await fetchJson<{ requests: RequestSummary[] }>(
         `${API_URL}/api/procurement/requests${
           filter ? `?status=${filter}` : ""
         }`
       );
-      if (res.ok) {
-        const data = await res.json();
-        setRequests(data.requests || []);
-      }
-    } catch {
-      // Silently fail
+      setRequests(data.requests || []);
+      setError(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load requests");
     } finally {
+      requestInFlight.current = false;
       setLoading(false);
     }
-  };
+  }, [filter]);
 
   useEffect(() => {
     fetchRequests();
-    // Poll every 5 seconds
-    const interval = setInterval(fetchRequests, 5000);
+    const interval = setInterval(fetchRequests, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [filter]);
+  }, [fetchRequests]);
 
   const viewDetails = async (id: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/procurement/requests/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAuditData(data);
-        setSelectedId(id);
-      }
-    } catch {
-      // Silently fail
+      const data = await fetchJson<Record<string, unknown>>(
+        `${API_URL}/api/procurement/requests/${id}`
+      );
+      setAuditData(data);
+      setSelectedId(id);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load request details");
     }
   };
 
@@ -93,7 +97,7 @@ export default function Dashboard() {
           }}
         >
           <h2 className="card-title" style={{ margin: 0 }}>
-            📊 Request Dashboard
+            Request Dashboard
           </h2>
           <div style={{ display: "flex", gap: 8 }}>
             <select
@@ -111,6 +115,12 @@ export default function Dashboard() {
             </select>
           </div>
         </div>
+
+        {error && (
+          <div className="alert alert-error">
+            <strong>Unable to load requests:</strong> {error}
+          </div>
+        )}
 
         {loading ? (
           <div className="loading">

@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchJson } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const POLL_INTERVAL_MS = 10000;
 const APPROVAL_STATUSES = new Set([
   "awaiting_approval",
   "pending_approval",
@@ -158,50 +160,38 @@ export default function ApprovePage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [approverName, setApproverName] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const pendingFetchInFlight = useRef(false);
 
-  const fetchPendingRequests = async () => {
+  const fetchPendingRequests = useCallback(async () => {
+    if (pendingFetchInFlight.current) return;
+
+    pendingFetchInFlight.current = true;
     try {
-      const res = await fetch(`${API_URL}/api/procurement/requests`);
-      if (!res.ok) return;
-
-      const data = await res.json();
-      const summaries: RequestSummary[] = data.requests || [];
-      const enriched = await Promise.all(
-        summaries.map(async (summary) => {
-          const detailRes = await fetch(
-            `${API_URL}/api/procurement/requests/${summary.id}`
-          );
-          if (!detailRes.ok) {
-            return { ...summary, agent_logs: [], decision: null };
-          }
-
-          const detail = await detailRes.json();
-          return {
-            ...summary,
-            status: detail.request?.status || summary.status,
-            agent_logs: detail.agent_logs || [],
-            decision: detail.decision || null,
-          };
-        })
+      const data = await fetchJson<{ requests: ApprovalRequest[] }>(
+        `${API_URL}/api/procurement/requests/pending-approvals`
       );
-
-      setRequests(enriched.filter(isReadyForApproval));
-    } catch {
-      // Keep the last good list visible while polling retries.
+      setRequests((data.requests || []).filter(isReadyForApproval));
+      setLoadError(null);
+    } catch (err: unknown) {
+      setLoadError(
+        err instanceof Error ? err.message : "Failed to load pending approvals"
+      );
     } finally {
+      pendingFetchInFlight.current = false;
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchPendingRequests();
-    const interval = setInterval(fetchPendingRequests, 5000);
+    const interval = setInterval(fetchPendingRequests, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchPendingRequests]);
 
   const handleDecision = async (requestId: string, approved: boolean) => {
     if (!approverName.trim()) {
@@ -216,22 +206,18 @@ export default function ApprovePage() {
     setMessage(null);
 
     try {
-      const res = await fetch(`${API_URL}/api/procurement/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          request_id: requestId,
-          approved,
-          signed_by: approverName.trim(),
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || "Failed to submit decision");
-      }
-
-      const result = await res.json();
+      const result = await fetchJson<{ audit_packet?: { audit_hash?: string } }>(
+        `${API_URL}/api/procurement/approve`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            request_id: requestId,
+            approved,
+            signed_by: approverName.trim(),
+          }),
+        }
+      );
       setMessage({
         type: "success",
         text: `Request ${approved ? "approved" : "rejected"} successfully. SHA-256 audit hash: ${result.audit_packet?.audit_hash?.substring(0, 16)}...`,
@@ -275,6 +261,12 @@ export default function ApprovePage() {
 
       {message && (
         <div className={`alert alert-${message.type}`}>{message.text}</div>
+      )}
+
+      {loadError && (
+        <div className="alert alert-error">
+          <strong>Unable to load pending approvals:</strong> {loadError}
+        </div>
       )}
 
       {loading ? (

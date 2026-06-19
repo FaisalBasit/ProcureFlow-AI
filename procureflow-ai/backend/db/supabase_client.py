@@ -3,6 +3,7 @@ Supabase client for ProcureFlow AI.
 Handles all database operations — requests, agent_logs, decisions.
 """
 
+import asyncio
 import os
 import json
 from datetime import datetime, timezone
@@ -29,6 +30,12 @@ class SupabaseDBClient:
         if not self.url or not self.key:
             raise SupabaseClientError("SUPABASE_URL and SUPABASE_KEY must be set")
         self.client: Client = create_client(self.url, self.key)
+        self._execute_lock = asyncio.Lock()
+
+    async def _execute(self, query):
+        """Run the synchronous Supabase client without blocking FastAPI's event loop."""
+        async with self._execute_lock:
+            return await asyncio.to_thread(query.execute)
 
     def _json_safe(self, value: Dict[str, Any]) -> Dict[str, Any]:
         """Return a JSONB-safe object without turning it into a JSON string."""
@@ -127,39 +134,83 @@ class SupabaseDBClient:
             "justification": justification,
             "status": "pending",
         }
-        result = self.client.table("requests").insert(data).execute()
+        result = await self._execute(self.client.table("requests").insert(data))
         if not result.data:
             raise SupabaseClientError("Failed to create request")
         return result.data[0]
 
     async def get_request(self, request_id: str) -> Optional[Dict[str, Any]]:
         """Get a single request by ID."""
-        result = self.client.table("requests").select("*").eq("id", request_id).execute()
+        result = await self._execute(
+            self.client.table("requests").select("*").eq("id", request_id)
+        )
         return result.data[0] if result.data else None
 
     async def update_request_status(self, request_id: str, status: str) -> Dict[str, Any]:
         """Update request status."""
-        result = (
+        result = await self._execute(
             self.client.table("requests")
             .update({
                 "status": status,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
             .eq("id", request_id)
-            .execute()
         )
         return result.data[0] if result.data else None
 
+    async def list_requests_with_activity(
+        self,
+        status: Optional[str] = None,
+        statuses: Optional[List[str]] = None,
+        include_decisions: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """List selected requests with batched logs/decisions and reconciled statuses."""
+        query = self.client.table("requests").select("*")
+        if status:
+            query = query.eq("status", status)
+        elif statuses:
+            query = query.in_("status", statuses)
+
+        result = await self._execute(
+            query.order("created_at", desc=True)
+        )
+        requests = result.data or []
+        request_ids = [request["id"] for request in requests]
+        logs_by_request = await self.get_agent_logs_for_requests(request_ids)
+        decisions_by_request = (
+            await self.get_decisions_for_requests(request_ids)
+            if include_decisions
+            else {}
+        )
+
+        rows = []
+        for request in requests:
+            request_id = request["id"]
+            logs = logs_by_request.get(request_id, [])
+            decision = decisions_by_request.get(request_id)
+            effective_status = self._status_from_activity(request, logs, decision)
+            reconciled_request = {**request, "status": effective_status}
+
+            if status and reconciled_request.get("status") != status:
+                continue
+
+            rows.append(
+                {
+                    "request": reconciled_request,
+                    "agent_logs": logs,
+                    "decision": decision,
+                }
+            )
+
+        return rows
+
     async def list_requests(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """List requests with optional status filter."""
-        result = self.client.table("requests").select("*").order("created_at", desc=True).execute()
-        reconciled = [
-            await self.reconcile_request_status(request)
-            for request in result.data
-        ]
+        query = self.client.table("requests").select("*")
         if status:
-            return [request for request in reconciled if request.get("status") == status]
-        return reconciled
+            query = query.eq("status", status)
+        result = await self._execute(query.order("created_at", desc=True))
+        return result.data or []
 
     # --- Agent Logs ---
 
@@ -177,19 +228,42 @@ class SupabaseDBClient:
             "action": action,
             "output": self._json_safe(output),
         }
-        result = self.client.table("agent_logs").insert(data).execute()
+        result = await self._execute(self.client.table("agent_logs").insert(data))
         return self._normalize_log(result.data[0]) if result.data else None
 
     async def get_agent_logs(self, request_id: str) -> List[Dict[str, Any]]:
         """Get all agent logs for a request."""
-        result = (
+        result = await self._execute(
             self.client.table("agent_logs")
             .select("*")
             .eq("request_id", request_id)
             .order("created_at")
-            .execute()
         )
-        return [self._normalize_log(log) for log in result.data]
+        return [self._normalize_log(log) for log in result.data or []]
+
+    async def get_agent_logs_for_requests(
+        self,
+        request_ids: List[str],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Get agent logs for many requests in a single Supabase call."""
+        if not request_ids:
+            return {}
+
+        result = await self._execute(
+            self.client.table("agent_logs")
+            .select("*")
+            .in_("request_id", request_ids)
+            .order("created_at")
+        )
+
+        logs_by_request: Dict[str, List[Dict[str, Any]]] = {
+            request_id: [] for request_id in request_ids
+        }
+        for log in result.data or []:
+            normalized = self._normalize_log(log)
+            logs_by_request.setdefault(normalized["request_id"], []).append(normalized)
+
+        return logs_by_request
 
     # --- Decisions ---
 
@@ -207,15 +281,35 @@ class SupabaseDBClient:
             "audit_hash": audit_hash,
             "signed_by": signed_by,
         }
-        result = self.client.table("decisions").insert(data).execute()
+        result = await self._execute(self.client.table("decisions").insert(data))
         return result.data[0] if result.data else None
 
     async def get_decision(self, request_id: str) -> Optional[Dict[str, Any]]:
         """Get the decision record for a request."""
-        result = (
+        result = await self._execute(
             self.client.table("decisions")
             .select("*")
             .eq("request_id", request_id)
-            .execute()
         )
         return result.data[0] if result.data else None
+
+    async def get_decisions_for_requests(
+        self,
+        request_ids: List[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Get latest decision rows for many requests in a single Supabase call."""
+        if not request_ids:
+            return {}
+
+        result = await self._execute(
+            self.client.table("decisions")
+            .select("*")
+            .in_("request_id", request_ids)
+            .order("decided_at", desc=True)
+        )
+
+        decisions_by_request: Dict[str, Dict[str, Any]] = {}
+        for decision in result.data or []:
+            decisions_by_request.setdefault(decision["request_id"], decision)
+
+        return decisions_by_request
