@@ -34,6 +34,37 @@ class AIMLClient:
             "HTTP-Referer": "https://github.com/FaisalBasit/ProcureFlow-AI",
         }
 
+    def _parse_json_object(self, content: str) -> Dict[str, Any]:
+        """Parse a JSON object from model output, including fenced markdown JSON."""
+        cleaned = content.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(cleaned):
+            if char != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(cleaned[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+
+        raise AIMLClientError("Model response did not contain a JSON object")
+
     async def chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -47,12 +78,21 @@ class AIMLClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self.headers,
-                json=payload,
-            )
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self.headers,
+                    json=payload,
+                    timeout=30.0,
+                )
+        except httpx.ConnectError as e:
+            raise AIMLClientError(f"Connection failed to OpenRouter API: {e}")
+        except httpx.TimeoutException as e:
+            raise AIMLClientError(f"Timeout connecting to OpenRouter API: {e}")
+        except Exception as e:
+            raise AIMLClientError(f"Unexpected error calling OpenRouter API: {e}")
+
         if resp.status_code != 200:
             raise AIMLClientError(f"OpenRouter API error: {resp.status_code} - {resp.text}")
         return resp.json()
@@ -77,10 +117,9 @@ class AIMLClient:
         ]
         result = await self.chat_completion(prompt, temperature=0.3)
         content = result["choices"][0]["message"]["content"]
-        # Try to parse as JSON, fallback to structured text
         try:
-            return json.loads(content)
-        except json.JSONDecodeError:
+            return self._parse_json_object(content)
+        except AIMLClientError:
             return {
                 "risk_score": 5,
                 "risk_level": "medium",
@@ -145,8 +184,8 @@ class AIMLClient:
         result = await self.chat_completion(prompt, temperature=0.2, max_tokens=1024)
         content = result["choices"][0]["message"]["content"]
         try:
-            return json.loads(content)
-        except json.JSONDecodeError:
+            return self._parse_json_object(content)
+        except AIMLClientError:
             return {
                 "compliant": False,
                 "policy_checks": [],

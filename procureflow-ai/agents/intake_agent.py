@@ -124,9 +124,9 @@ class IntakeAgent:
             "warnings": validation["warnings"],
         }
 
+        await self.db.update_request_status(request_id, "risk_assessment")
         try:
             await self.band.send_message(band_message, "IntakeAgent")
-            await self.db.update_request_status(request_id, "risk_assessment")
         except BandClientError as e:
             # Still return the request even if Band fails (degraded mode)
             print(f"Warning: Band communication failed: {e}")

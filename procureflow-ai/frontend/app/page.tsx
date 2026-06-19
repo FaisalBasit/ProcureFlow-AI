@@ -20,6 +20,8 @@ export default function Home() {
   const [logs, setLogs] = useState<AgentLog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const submittedRequestId =
+    typeof result?.request_id === "string" ? result.request_id : "";
 
   const handleSubmit = async (data: {
     vendor_name: string;
@@ -83,7 +85,7 @@ export default function Home() {
             <div className="card">
               <h2 className="card-title">✅ Request Submitted</h2>
               <div className="alert alert-success">
-                Request <strong>#{result.request_id}</strong> has been submitted
+                Request <strong>#{submittedRequestId}</strong> has been submitted
                 and is being processed by the agent pipeline.
               </div>
 

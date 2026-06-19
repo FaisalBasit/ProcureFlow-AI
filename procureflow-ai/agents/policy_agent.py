@@ -103,9 +103,9 @@ class PolicyAgent:
             "human_visible": human_visible,
         }
 
+        await self.db.update_request_status(request_id, next_status)
         try:
             await self.band.send_message(band_message, "PolicyAgent")
-            await self.db.update_request_status(request_id, next_status)
         except BandClientError as e:
             print(f"Warning: Band communication failed: {e}")
 

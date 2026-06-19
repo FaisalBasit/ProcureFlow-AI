@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const APPROVAL_STATUSES = new Set([
+  "awaiting_approval",
+  "pending_approval",
+  "flagged_for_review",
+]);
 
 interface RequestSummary {
   id: string;
@@ -14,8 +19,80 @@ interface RequestSummary {
   created_at: string;
 }
 
+interface AgentLog {
+  id: string;
+  agent_name: string;
+  action: string;
+  output: Record<string, unknown> | string | null;
+  created_at: string;
+}
+
+interface ApprovalRequest extends RequestSummary {
+  agent_logs: AgentLog[];
+  decision: Record<string, unknown> | null;
+}
+
+function normalizeOutput(output: AgentLog["output"]): Record<string, unknown> {
+  if (!output) return {};
+  if (typeof output === "string") {
+    try {
+      const parsed = JSON.parse(output);
+      return typeof parsed === "object" && parsed ? parsed : {};
+    } catch {
+      return { raw: output };
+    }
+  }
+  return output;
+}
+
+function latestOutput(
+  logs: AgentLog[],
+  agentName: string,
+  action?: string
+): Record<string, unknown> {
+  const matches = logs.filter(
+    (log) =>
+      log.agent_name === agentName && (!action || log.action === action)
+  );
+  return normalizeOutput(matches[matches.length - 1]?.output ?? null);
+}
+
+function isReadyForApproval(req: ApprovalRequest): boolean {
+  if (req.decision) return false;
+  if (APPROVAL_STATUSES.has(req.status)) return true;
+  return req.agent_logs.some(
+    (log) =>
+      log.agent_name === "ApprovalAgent" &&
+      log.action === "approval_summary_generated"
+  );
+}
+
+function toText(value: unknown, fallback = "Not available"): string {
+  if (typeof value === "string" && value.trim()) {
+    const cleaned = value
+      .trim()
+      .replace(/^```(?:json)?/i, "")
+      .replace(/```$/, "")
+      .trim();
+
+    if (cleaned.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(cleaned);
+        if (typeof parsed.recommendation === "string") return parsed.recommendation;
+        if (typeof parsed.notes === "string") return parsed.notes;
+      } catch {
+        return value;
+      }
+    }
+
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return fallback;
+}
+
 export default function ApprovePage() {
-  const [requests, setRequests] = useState<RequestSummary[]>([]);
+  const [requests, setRequests] = useState<ApprovalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [approverName, setApproverName] = useState("");
@@ -26,15 +103,33 @@ export default function ApprovePage() {
 
   const fetchPendingRequests = async () => {
     try {
-      const res = await fetch(
-        `${API_URL}/api/procurement/requests?status=awaiting_approval`
+      const res = await fetch(`${API_URL}/api/procurement/requests`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const summaries: RequestSummary[] = data.requests || [];
+      const enriched = await Promise.all(
+        summaries.map(async (summary) => {
+          const detailRes = await fetch(
+            `${API_URL}/api/procurement/requests/${summary.id}`
+          );
+          if (!detailRes.ok) {
+            return { ...summary, agent_logs: [], decision: null };
+          }
+
+          const detail = await detailRes.json();
+          return {
+            ...summary,
+            status: detail.request?.status || summary.status,
+            agent_logs: detail.agent_logs || [],
+            decision: detail.decision || null,
+          };
+        })
       );
-      if (res.ok) {
-        const data = await res.json();
-        setRequests(data.requests || []);
-      }
+
+      setRequests(enriched.filter(isReadyForApproval));
     } catch {
-      // Silently fail
+      // Keep the last good list visible while polling retries.
     } finally {
       setLoading(false);
     }
@@ -77,10 +172,9 @@ export default function ApprovePage() {
       const result = await res.json();
       setMessage({
         type: "success",
-        text: `Request ${approved ? "approved" : "rejected"} successfully! SHA-256 audit hash: ${result.audit_packet?.audit_hash?.substring(0, 16)}...`,
+        text: `Request ${approved ? "approved" : "rejected"} successfully. SHA-256 audit hash: ${result.audit_packet?.audit_hash?.substring(0, 16)}...`,
       });
 
-      // Remove from list
       setRequests((prev) => prev.filter((r) => r.id !== requestId));
     } catch (err: unknown) {
       setMessage({
@@ -95,10 +189,10 @@ export default function ApprovePage() {
   return (
     <div>
       <div className="card">
-        <h2 className="card-title">✋ Human Approval Required</h2>
+        <h2 className="card-title">Human Approval Required</h2>
         <p style={{ color: "var(--text-muted)", marginBottom: 16 }}>
-          Review the agent analysis below and approve or reject each request.
-          Your decision will be sealed with a SHA-256 audit hash.
+          Review the full agent analysis, then approve or reject. The decision
+          is sealed with a SHA-256 audit hash.
         </p>
 
         <div className="form-group">
@@ -129,68 +223,101 @@ export default function ApprovePage() {
       ) : requests.length === 0 ? (
         <div className="card">
           <div style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
-            <p style={{ fontSize: "2rem", marginBottom: 8 }}>✅</p>
             <p>No requests pending approval.</p>
             <p style={{ fontSize: "0.9rem", marginTop: 8 }}>
-              All caught up! New requests requiring approval will appear here automatically.
+              New requests requiring approval will appear here automatically.
             </p>
           </div>
         </div>
       ) : (
-        requests.map((req) => (
-          <div key={req.id} className="card">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1.1rem" }}>
-                  {req.vendor_name}
-                </h3>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: 4 }}>
-                  {req.category} · ${req.amount.toLocaleString()}
-                </p>
+        requests.map((req) => {
+          const risk = latestOutput(req.agent_logs, "RiskAgent");
+          const policy = latestOutput(req.agent_logs, "PolicyAgent");
+          const approval = latestOutput(
+            req.agent_logs,
+            "ApprovalAgent",
+            "approval_summary_generated"
+          );
+
+          return (
+            <div key={req.id} className="card">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 16,
+                  marginBottom: 16,
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem" }}>
+                    {req.vendor_name}
+                  </h3>
+                  <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: 4 }}>
+                    {req.category} | ${req.amount.toLocaleString()} | {req.id}
+                  </p>
+                </div>
+                <span className="badge badge-pending">Awaiting Approval</span>
               </div>
-              <span className="badge badge-pending">Awaiting Approval</span>
-            </div>
 
-            <div
-              className="alert alert-info"
-              style={{ fontSize: "0.9rem", marginBottom: 16 }}
-            >
-              <strong>Justification:</strong> {req.justification}
-            </div>
+              <div className="grid grid-2" style={{ marginBottom: 16 }}>
+                <div className="alert alert-info" style={{ marginBottom: 0 }}>
+                  <strong>Risk:</strong> {toText(risk.risk_level)}{" "}
+                  {risk.risk_score ? `(${risk.risk_score}/10)` : ""}
+                  <br />
+                  <small>{toText(risk.recommendation, "No risk recommendation recorded.")}</small>
+                </div>
+                <div className="alert alert-info" style={{ marginBottom: 0 }}>
+                  <strong>Policy:</strong> {toText(policy.verdict)}
+                  <br />
+                  <small>{toText(policy.notes, "No policy notes recorded.")}</small>
+                </div>
+              </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                justifyContent: "flex-end",
-                borderTop: "1px solid var(--border)",
-                paddingTop: 16,
-              }}
-            >
-              <button
-                className="btn btn-danger"
-                disabled={actionLoading === req.id}
-                onClick={() => handleDecision(req.id, false)}
+              <div
+                className="alert alert-info"
+                style={{ whiteSpace: "pre-wrap", marginBottom: 16 }}
               >
-                {actionLoading === req.id ? "Processing..." : "❌ Reject"}
-              </button>
-              <button
-                className="btn btn-success"
-                disabled={actionLoading === req.id}
-                onClick={() => handleDecision(req.id, true)}
+                <strong>Approval summary:</strong>
+                <br />
+                {toText(approval.summary, "Approval summary is still being generated.")}
+              </div>
+
+              <div
+                className="alert alert-info"
+                style={{ fontSize: "0.9rem", marginBottom: 16 }}
               >
-                {actionLoading === req.id ? "Processing..." : "✅ Approve"}
-              </button>
+                <strong>Business justification:</strong> {req.justification}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  justifyContent: "flex-end",
+                  borderTop: "1px solid var(--border)",
+                  paddingTop: 16,
+                }}
+              >
+                <button
+                  className="btn btn-danger"
+                  disabled={actionLoading === req.id}
+                  onClick={() => handleDecision(req.id, false)}
+                >
+                  {actionLoading === req.id ? "Processing..." : "Reject"}
+                </button>
+                <button
+                  className="btn btn-success"
+                  disabled={actionLoading === req.id}
+                  onClick={() => handleDecision(req.id, true)}
+                >
+                  {actionLoading === req.id ? "Processing..." : "Approve"}
+                </button>
+              </div>
             </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );

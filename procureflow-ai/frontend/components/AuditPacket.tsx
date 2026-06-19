@@ -2,13 +2,14 @@
 
 interface AuditPacketProps {
   request: Record<string, unknown>;
-  decision: Record<string, unknown>;
+  decision: Record<string, unknown> | null;
   agentLogs: Record<string, unknown>[];
   onBack?: () => void;
 }
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "Not available";
   return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -19,12 +20,28 @@ function formatDate(dateString: string): string {
   });
 }
 
+function asText(value: unknown, fallback = "Not available"): string {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return fallback;
+}
+
+function asNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value) || 0;
+  return 0;
+}
+
 export default function AuditPacket({
   request,
   decision,
   agentLogs,
   onBack,
 }: AuditPacketProps) {
+  const status = asText(request.status, "pending");
+  const auditHash = asText(decision?.audit_hash, "");
+  const humanApproved = decision?.human_approved === true;
+
   return (
     <div>
       {onBack && (
@@ -37,19 +54,16 @@ export default function AuditPacket({
           }}
           onClick={onBack}
         >
-          ← Back
+          Back
         </button>
       )}
 
       <div className="card">
-        <h2 className="card-title">📄 Audit Packet</h2>
+        <h2 className="card-title">Audit Packet</h2>
 
-        {decision?.audit_hash && (
-          <div
-            className="alert alert-info"
-            style={{ wordBreak: "break-all" }}
-          >
-            <strong>SHA-256 Hash:</strong> {decision.audit_hash as string}
+        {auditHash && (
+          <div className="alert alert-info" style={{ wordBreak: "break-all" }}>
+            <strong>SHA-256 Hash:</strong> {auditHash}
             <br />
             <small>
               This hash seals the integrity of this decision. Any tampering
@@ -74,43 +88,40 @@ export default function AuditPacket({
                 <tr>
                   <td style={{ color: "var(--text-muted)" }}>Request ID</td>
                   <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>
-                    {request.id as string}
+                    {asText(request.id)}
                   </td>
                 </tr>
                 <tr>
                   <td style={{ color: "var(--text-muted)" }}>Vendor</td>
-                  <td>{request.vendor_name as string}</td>
+                  <td>{asText(request.vendor_name)}</td>
                 </tr>
                 <tr>
                   <td style={{ color: "var(--text-muted)" }}>Amount</td>
-                  <td>
-                    ${(request.amount as number).toLocaleString()}
-                  </td>
+                  <td>${asNumber(request.amount).toLocaleString()}</td>
                 </tr>
                 <tr>
                   <td style={{ color: "var(--text-muted)" }}>Category</td>
-                  <td>{request.category as string}</td>
+                  <td>{asText(request.category)}</td>
                 </tr>
                 <tr>
                   <td style={{ color: "var(--text-muted)" }}>Status</td>
                   <td>
                     <span
                       className={`badge ${
-                        request.status === "approved"
+                        status === "approved"
                           ? "badge-approved"
-                          : request.status === "rejected" ||
-                            request.status === "rejected_by_policy"
+                          : status === "rejected" || status === "rejected_by_policy"
                           ? "badge-rejected"
                           : "badge-pending"
                       }`}
                     >
-                      {request.status as string}
+                      {status.replace(/_/g, " ")}
                     </span>
                   </td>
                 </tr>
                 <tr>
                   <td style={{ color: "var(--text-muted)" }}>Created</td>
-                  <td>{formatDate(request.created_at as string)}</td>
+                  <td>{formatDate(asText(request.created_at, ""))}</td>
                 </tr>
               </tbody>
             </table>
@@ -134,22 +145,20 @@ export default function AuditPacket({
                     <td>
                       <span
                         className={`badge ${
-                          decision.human_approved
-                            ? "badge-approved"
-                            : "badge-rejected"
+                          humanApproved ? "badge-approved" : "badge-rejected"
                         }`}
                       >
-                        {decision.human_approved ? "✅ Approved" : "❌ Rejected"}
+                        {humanApproved ? "Approved" : "Rejected"}
                       </span>
                     </td>
                   </tr>
                   <tr>
                     <td style={{ color: "var(--text-muted)" }}>Signed By</td>
-                    <td>{decision.signed_by as string}</td>
+                    <td>{asText(decision.signed_by)}</td>
                   </tr>
                   <tr>
                     <td style={{ color: "var(--text-muted)" }}>Decided At</td>
-                    <td>{formatDate(decision.decided_at as string)}</td>
+                    <td>{formatDate(asText(decision.decided_at, ""))}</td>
                   </tr>
                   <tr>
                     <td style={{ color: "var(--text-muted)" }}>Audit Hash</td>
@@ -160,7 +169,7 @@ export default function AuditPacket({
                         wordBreak: "break-all",
                       }}
                     >
-                      {decision.audit_hash as string}
+                      {auditHash}
                     </td>
                   </tr>
                 </tbody>
@@ -175,7 +184,7 @@ export default function AuditPacket({
       </div>
 
       <div className="card">
-        <h2 className="card-title">📋 Agent Processing Log</h2>
+        <h2 className="card-title">Agent Processing Log</h2>
         <div className="table-container">
           <table>
             <thead>
@@ -187,15 +196,13 @@ export default function AuditPacket({
             </thead>
             <tbody>
               {agentLogs.map((log) => (
-                <tr key={log.id as string}>
+                <tr key={asText(log.id)}>
                   <td>
-                    <strong>{log.agent_name as string}</strong>
+                    <strong>{asText(log.agent_name)}</strong>
                   </td>
-                  <td>
-                    {(log.action as string).replace(/_/g, " ")}
-                  </td>
+                  <td>{asText(log.action).replace(/_/g, " ")}</td>
                   <td style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                    {formatDate(log.created_at as string)}
+                    {formatDate(asText(log.created_at, ""))}
                   </td>
                 </tr>
               ))}

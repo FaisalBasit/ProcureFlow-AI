@@ -118,6 +118,11 @@ async def get_request(request_id: str):
 
         logs = await db_client.get_agent_logs(request_id)
         decision = await db_client.get_decision(request_id)
+        request = await db_client.reconcile_request_status(
+            request,
+            logs=logs,
+            decision=decision,
+        )
 
         return {
             "request": request,
@@ -179,6 +184,11 @@ async def get_request_status(request_id: str):
 
         logs = await db_client.get_agent_logs(request_id)
         decision = await db_client.get_decision(request_id)
+        request = await db_client.reconcile_request_status(
+            request,
+            logs=logs,
+            decision=decision,
+        )
 
         agent_statuses = {}
         for log in logs:

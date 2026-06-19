@@ -6,7 +6,7 @@ interface AgentLog {
   id: string;
   agent_name: string;
   action: string;
-  output: Record<string, unknown>;
+  output: Record<string, unknown> | string | null;
   created_at: string;
 }
 
@@ -15,12 +15,12 @@ interface AgentTimelineProps {
   logs: AgentLog[];
 }
 
-const AGENT_ICONS: Record<string, string> = {
-  IntakeAgent: "📥",
-  RiskAgent: "⚠️",
-  PolicyAgent: "📋",
-  ApprovalAgent: "✅",
-  WebhookRouter: "🔗",
+const AGENT_LABELS: Record<string, string> = {
+  IntakeAgent: "Intake",
+  RiskAgent: "Risk",
+  PolicyAgent: "Policy",
+  ApprovalAgent: "Approval",
+  WebhookRouter: "Router",
 };
 
 const AGENT_COLORS: Record<string, "active" | "success" | "danger" | "warning"> = {
@@ -45,21 +45,28 @@ function formatTime(dateString: string): string {
   });
 }
 
+function normalizeOutput(output: AgentLog["output"]): Record<string, unknown> {
+  if (!output) return {};
+  if (typeof output === "string") {
+    try {
+      const parsed = JSON.parse(output);
+      return typeof parsed === "object" && parsed ? parsed : {};
+    } catch {
+      return { raw: output };
+    }
+  }
+  return output;
+}
+
 export default function AgentTimeline({ requestId, logs }: AgentTimelineProps) {
   const [currentLogs, setCurrentLogs] = useState<AgentLog[]>(logs);
 
-  // Poll for new logs every 3 seconds if request is still processing
+  useEffect(() => {
+    setCurrentLogs(logs);
+  }, [logs]);
+
   useEffect(() => {
     if (!requestId) return;
-
-    const isPending = currentLogs.some(
-      (log) =>
-        log.action.includes("pending") ||
-        log.action.includes("submitted") ||
-        log.action.includes("processing")
-    );
-
-    if (!isPending && currentLogs.length > 0) return;
 
     const interval = setInterval(async () => {
       try {
@@ -73,17 +80,17 @@ export default function AgentTimeline({ requestId, logs }: AgentTimelineProps) {
           }
         }
       } catch {
-        // Silently retry
+        // Silently retry while the user watches the pipeline.
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [requestId, currentLogs]);
+  }, [requestId]);
 
   if (currentLogs.length === 0) {
     return (
       <div className="card">
-        <h2 className="card-title">🔄 Agent Timeline</h2>
+        <h2 className="card-title">Agent Timeline</h2>
         <p style={{ color: "var(--text-muted)" }}>
           Waiting for agent activity...
         </p>
@@ -93,77 +100,89 @@ export default function AgentTimeline({ requestId, logs }: AgentTimelineProps) {
 
   return (
     <div className="card">
-      <h2 className="card-title">🔄 Agent Timeline</h2>
+      <h2 className="card-title">Agent Timeline</h2>
       <div className="timeline">
-        {currentLogs.map((log) => (
-          <div key={log.id} className="timeline-item">
-            <div
-              className={`timeline-dot ${AGENT_COLORS[log.agent_name] || "active"}`}
-            />
-            <div className="timeline-content">
-              <div className="timeline-agent">
-                {AGENT_ICONS[log.agent_name] || "🤖"} {log.agent_name}
-                <span
-                  style={{
-                    float: "right",
-                    fontSize: "0.8rem",
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  {formatTime(log.created_at)}
-                </span>
-              </div>
-              <div className="timeline-action">
-                {formatAction(log.action)}
-              </div>
-              {log.output?.summary && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    padding: 8,
-                    backgroundColor: "var(--bg-card)",
-                    borderRadius: "4px",
-                    fontSize: "0.85rem",
-                    color: "var(--text-muted)",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {log.output.summary as string}
-                </div>
-              )}
-              {log.output?.risk_level && (
-                <div style={{ marginTop: 8 }}>
+        {currentLogs.map((log) => {
+          const output = normalizeOutput(log.output);
+          const summary = typeof output.summary === "string" ? output.summary : "";
+          const riskLevel = typeof output.risk_level === "string" ? output.risk_level : "";
+          const riskScore =
+            typeof output.risk_score === "number" || typeof output.risk_score === "string"
+              ? String(output.risk_score)
+              : "n/a";
+          const verdict = typeof output.verdict === "string" ? output.verdict : "";
+
+          return (
+            <div key={log.id} className="timeline-item">
+              <div
+                className={`timeline-dot ${AGENT_COLORS[log.agent_name] || "active"}`}
+              />
+              <div className="timeline-content">
+                <div className="timeline-agent">
+                  {AGENT_LABELS[log.agent_name] || "Agent"}: {log.agent_name}
                   <span
-                    className={`badge ${
-                      log.output.risk_level === "low"
-                        ? "badge-approved"
-                        : log.output.risk_level === "high" || log.output.risk_level === "critical"
-                        ? "badge-rejected"
-                        : "badge-review"
-                    }`}
+                    style={{
+                      float: "right",
+                      fontSize: "0.8rem",
+                      color: "var(--text-muted)",
+                    }}
                   >
-                    Risk: {log.output.risk_level as string} ({log.output.risk_score as string}/10)
+                    {formatTime(log.created_at)}
                   </span>
                 </div>
-              )}
-              {log.output?.verdict && (
-                <div style={{ marginTop: 8 }}>
-                  <span
-                    className={`badge ${
-                      log.output.verdict === "approved"
-                        ? "badge-approved"
-                        : log.output.verdict === "rejected"
-                        ? "badge-rejected"
-                        : "badge-review"
-                    }`}
+                <div className="timeline-action">{formatAction(log.action)}</div>
+
+                {summary && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: 8,
+                      backgroundColor: "var(--bg-card)",
+                      borderRadius: "4px",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      whiteSpace: "pre-wrap",
+                    }}
                   >
-                    {log.output.verdict as string}
-                  </span>
-                </div>
-              )}
+                    {summary}
+                  </div>
+                )}
+
+                {riskLevel && (
+                  <div style={{ marginTop: 8 }}>
+                    <span
+                      className={`badge ${
+                        riskLevel === "low"
+                          ? "badge-approved"
+                          : riskLevel === "high" || riskLevel === "critical"
+                          ? "badge-rejected"
+                          : "badge-review"
+                      }`}
+                    >
+                      Risk: {riskLevel} ({riskScore}/10)
+                    </span>
+                  </div>
+                )}
+
+                {verdict && (
+                  <div style={{ marginTop: 8 }}>
+                    <span
+                      className={`badge ${
+                        verdict === "approved"
+                          ? "badge-approved"
+                          : verdict === "rejected"
+                          ? "badge-rejected"
+                          : "badge-review"
+                      }`}
+                    >
+                      {verdict}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
