@@ -1,197 +1,219 @@
-# 🏆 ProcureFlow AI — Intelligent Procurement Orchestrator
+# ProcureFlow AI
 
-[![Band](https://img.shields.io/badge/Powered%20by-Band-6C47F5)](https://bandprotocol.com)
-[![AI/ML API](https://img.shields.io/badge/AI-OpenRouter-FF6B35)](https://openrouter.ai)
-[![LangChain](https://img.shields.io/badge/LangChain-v0.2-1C3C3C)](https://langchain.com)
-[![CrewAI](https://img.shields.io/badge/CrewAI-v0.30-FFD700)](https://crewai.com)
-[![FastAPI](https://img.shields.io/badge/FastAPI-v0.111-009688)](https://fastapi.tiangolo.com)
-[![Next.js](https://img.shields.io/badge/Next.js-14-000000)](https://nextjs.org)
-[![Supabase](https://img.shields.io/badge/Supabase-v2-3ECF8E)](https://supabase.com)
+ProcureFlow AI is a Band-coordinated procurement approval desk for enterprise purchase requests. Four specialized agents review a request, exchange handoff events through a shared Band room, escalate to a human approver, and seal the final decision with a SHA-256 audit hash.
 
-> **Track:** Track 1 (Internal Enterprise Workflows) — Band of Agents Hackathon 2026
+Track: Band of Agents Hackathon 2026, Internal Enterprise Workflows.
 
-A multi-agent procurement and vendor approval system where specialized AI agents collaborate through **Band** to fully automate enterprise purchase requests — from vendor discovery and risk scoring to policy compliance and human sign-off.
+## Why It Matters
 
-## ✨ Why This Wins
+Procurement is slow because work moves across finance, security, policy, operations, and management. A simple purchase can get stuck in email threads, spreadsheet comments, and unclear ownership.
 
-Procurement is a universal enterprise pain point. It's multi-step, involves multiple stakeholders, and is a perfect showcase for:
-- **Agent-to-agent handoffs** via Band rooms
-- **Human-in-the-loop design** with clear approval workflows
-- **Audit-trail generation** with tamper-evident SHA-256 seals
-- **Cross-framework orchestration** (LangChain + CrewAI + Custom Python)
+ProcureFlow AI turns that process into an auditable multi-agent workflow:
 
-## 🤖 The 4 Agents
+- Intake normalizes the request.
+- Risk evaluates vendor and spend exposure.
+- Policy checks procurement controls and can escalate or block.
+- Approval creates a human-readable decision memo.
+- A human signs the decision.
+- The system produces a tamper-evident audit packet.
 
-| Agent | Role | Framework |
-|---|---|---|
-| `@Intake` | Parses purchase request (vendor, amount, category, justification) | LangChain |
-| `@RiskAgent` | Scores vendor risk using AI/ML API (news, financials, compliance flags) | Custom Python + OpenRouter |
-| `@PolicyAgent` | Checks request against company procurement policy rules | CrewAI |
-| `@ApprovalAgent` | Summarizes findings, requests human sign-off, generates audit packet | LangChain |
+## The Agents
 
-All 4 communicate context exclusively through **Band rooms** — the core collaboration layer.
+| Agent | Responsibility | Band role |
+| --- | --- | --- |
+| IntakeAgent | Validates vendor, amount, category, and justification | Starts the shared room context |
+| RiskAgent | Scores vendor/spend risk with OpenRouter reasoning | Posts risk report |
+| PolicyAgent | Checks procurement rules and escalates or blocks | Posts compliance verdict |
+| ApprovalAgent | Summarizes all findings and finalizes human decision | Posts approval memo and final decision |
+| BandBridge | Records Band delivery success/failure in the audit log | Proves Band coordination status |
 
-## 🔄 Agent Workflow
+Each production demo should register the four agents as External Agents in Band and place them in the same Band chat room. See [docs/BAND_SETUP.md](docs/BAND_SETUP.md).
 
-```
-User submits purchase request (vendor, amount, purpose)
-        ↓
-@Intake parses & posts structured context to Band room
-        ↓
-@RiskAgent picks up from Band, scores vendor via AI/ML API, posts risk report
-        ↓
-@PolicyAgent reads risk + request from Band, checks policy rules, posts verdict
-        ↓
-@ApprovalAgent reads all context from Band, writes human-readable decision memo
-        ↓
-Human approves or rejects via UI → SHA-256 audit packet generated & sealed
+## End-To-End Flow
+
+```text
+Purchase request submitted
+  -> IntakeAgent validates, posts purchase_request to Band, and @mentions RiskAgent
+  -> RiskAgent analyzes, posts risk_report to Band, and @mentions PolicyAgent
+  -> PolicyAgent checks controls, posts policy_verdict to Band, and @mentions ApprovalAgent
+  -> ApprovalAgent creates decision memo and posts approval_summary to Band
+  -> Human approves/rejects in the UI
+  -> ApprovalAgent posts final_decision to Band
+  -> Supabase stores request, logs, decision, and SHA-256 audit hash
 ```
 
-## 🛠️ Tech Stack
+## What Judges Can Verify
 
-- **Band SDK** — Agent-to-agent communication via shared rooms
-- **OpenRouter (AI/ML API)** — Powers risk analysis, policy checks, and summary generation
-- **LangChain** — `@Intake` + `@ApprovalAgent` orchestration
-- **CrewAI** — `@PolicyAgent` role definition and task execution
-- **Python 3.11 / FastAPI** — Backend API with async agent runners
-- **Next.js 14 (App Router)** — Frontend dashboard with real-time agent timeline
-- **Supabase** — PostgreSQL for request history, agent logs, and decisions
-- **Vercel** — Frontend deployment
-- **Railway** — Backend deployment
+1. Band Agents page contains four ProcureFlow External Agents.
+2. Band chat room contains those agents as participants.
+3. A submitted request creates visible Band events and directed @mention handoffs from IntakeAgent, RiskAgent, PolicyAgent, and ApprovalAgent.
+4. Dashboard status progresses beyond `pending` into `awaiting_approval` and then `approved` or `rejected`.
+5. Approvals page shows risk, policy, approval summary, and human sign-off.
+6. Audit Packet shows agent logs, BandBridge delivery records, decision, signer, and SHA-256 hash.
 
-## 🚀 Quick Start
+## Tech Stack
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- A Supabase project
-- Band account (use code `BANDHACK26` for Pro)
-- OpenRouter API key
+- Band Agent API for multi-agent coordination events.
+- OpenRouter / AI-ML API compatible chat completions for risk, policy, and summary reasoning.
+- FastAPI backend with isolated agent runners.
+- Supabase/PostgreSQL for request history, agent logs, and decisions.
+- Next.js 14 frontend for submit, dashboard, approval, and audit packet views.
+- SHA-256 audit sealing for final decisions.
 
-### 1. Clone & Setup
+## Quick Start
 
-```bash
-git clone https://github.com/FaisalBasit/ProcureFlow-AI.git
-cd ProcureFlow-AI/procureflow-ai
+### 1. Backend
+
+```powershell
+cd procureflow-ai
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+.\venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### 2. Environment Variables
-
-```bash
-cp .env.example .env
-# Edit .env with your actual API keys:
-# - BAND_API_KEY, BAND_ROOM_ID, BAND_WEBHOOK_SECRET
-# - OPENROUTER_API_KEY
-# - SUPABASE_URL, SUPABASE_KEY
-```
-
-### 3. Database Setup
-
-Run the migration in your Supabase SQL editor:
-- `supabase/migrations/001_init.sql`
-
-### 4. Run Backend
-
-```bash
 uvicorn backend.main:app --reload --port 8000
 ```
 
-### 5. Run Frontend
+If the local venv is broken, `uv` also works:
 
-```bash
-cd frontend
+```powershell
+$env:UV_CACHE_DIR='D:\lablab.ai\.uv-cache'
+$env:UV_PYTHON_INSTALL_DIR='D:\lablab.ai\.uv-python'
+uv run --python 3.13 uvicorn backend.main:app --reload --port 8000
+```
+
+### 2. Frontend
+
+```powershell
+cd procureflow-ai\frontend
 npm install
 npm run dev
 ```
 
-### 6. Use the API
+Open `http://localhost:3000`.
 
-```bash
-# Submit a purchase request
-curl -X POST http://localhost:8000/api/procurement/submit-and-process \
-  -H "Content-Type: application/json" \
-  -d '{
-    "vendor_name": "Acme Cloud Services",
-    "amount": 15000,
-    "category": "software",
-    "justification": "Annual SaaS subscription for cloud infrastructure monitoring"
-  }'
+### 3. Environment
 
-# Approve the request
-curl -X POST http://localhost:8000/api/procurement/approve \
-  -H "Content-Type: application/json" \
-  -d '{
-    "request_id": "<request_id_from_submit>",
-    "approved": true,
-    "signed_by": "John Manager"
-  }'
+Copy `.env.example` to `.env` and set:
+
+```env
+BAND_ROOM_ID=your_band_chat_room_id
+BAND_INTAKE_API_KEY=your_intake_agent_key
+BAND_RISK_API_KEY=your_risk_agent_key
+BAND_POLICY_API_KEY=your_policy_agent_key
+BAND_APPROVAL_API_KEY=your_approval_agent_key
+
+OPENROUTER_API_KEY=your_openrouter_key
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
 ```
 
-## 📁 Project Structure
+Band setup details are in [docs/BAND_SETUP.md](docs/BAND_SETUP.md).
 
-```
-procureflow-ai/
-├── agents/
-│   ├── intake_agent.py          # @Intake — LangChain
-│   ├── risk_agent.py            # @RiskAgent — Custom Python + OpenRouter
-│   ├── policy_agent.py          # @PolicyAgent — CrewAI
-│   └── approval_agent.py        # @ApprovalAgent — LangChain
-├── backend/
-│   ├── main.py                  # FastAPI entry point
-│   ├── routes/
-│   │   ├── procurement.py       # POST /submit, GET /requests, POST /approve
-│   │   └── webhook.py           # Band webhook receiver
-│   ├── services/
-│   │   ├── band_client.py       # Band SDK wrapper
-│   │   ├── aiml_client.py       # OpenRouter AI client
-│   │   └── audit.py             # SHA-256 audit packet generator
-│   └── db/
-│       └── supabase_client.py   # Supabase CRUD operations
-├── frontend/
-│   ├── app/
-│   │   ├── page.tsx             # Request submission form
-│   │   ├── dashboard/page.tsx   # Live audit trail
-│   │   └── approve/page.tsx     # Human approval UI
-│   └── components/
-│       ├── RequestForm.tsx
-│       ├── AgentTimeline.tsx
-│       └── AuditPacket.tsx
-├── supabase/migrations/
-│   └── 001_init.sql             # Database schema
-├── .env.example
-├── requirements.txt
-└── README.md
+### 4. Database
+
+Run:
+
+```sql
+-- supabase/migrations/001_init.sql
 ```
 
-## 🏅 Key Differentiators
+in the Supabase SQL editor.
 
-1. **Cross-framework agents** — LangChain + CrewAI + custom Python in one Band room
-2. **Veto mechanic** — `@PolicyAgent` can block and force re-evaluation before human sees it
-3. **SHA-256 audit trail** — Every decision is sealed with a tamper-evident hash
-4. **Human-in-the-loop** — Approval requires explicit human action via the UI
-5. **Real enterprise use case** — Every procurement team can relate immediately
+## Verification Commands
 
-## 📝 API Endpoints
+Check API health:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/health"
+```
+
+Check Band readiness:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/api/procurement/band/status" -Method Get | ConvertTo-Json -Depth 8
+```
+
+Submit a request:
+
+```powershell
+$body = @{
+  vendor_name='Acme Cloud Services'
+  amount=15000
+  category='software'
+  justification='Annual cloud monitoring subscription for production deployment observability'
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:8000/api/procurement/submit-and-process" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body | ConvertTo-Json -Depth 10
+```
+
+Approve:
+
+```powershell
+$body = @{
+  request_id='<request-id>'
+  approved=$true
+  signed_by='Jane Finance'
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:8000/api/procurement/approve" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body | ConvertTo-Json -Depth 10
+```
+
+## Demo Script
+
+Use this order in the final video:
+
+1. Problem: procurement approvals are fragmented and hard to audit.
+2. Band setup: show four ProcureFlow remote agents in Band.
+3. Chat room: show all four agents as participants.
+4. Submit a realistic purchase request.
+5. Show Band events appearing agent by agent.
+6. Show Dashboard moving to `awaiting approval`.
+7. Show Approvals page with risk, policy, summary, and signer field.
+8. Approve the request.
+9. Show Audit Packet with SHA-256 hash and BandBridge records.
+10. Close with business value: faster approvals, less manual coordination, better traceability.
+
+## Judging Criteria Mapping
+
+| Criterion | How ProcureFlow AI addresses it |
+| --- | --- |
+| Application of Technology | Four specialized External Agents coordinate through Band Agent API events in one shared room. |
+| Presentation | UI exposes Submit, Dashboard, Approvals, Timeline, and Audit Packet views for a clean demo. |
+| Business Value | Automates a real enterprise procurement workflow with human governance and traceability. |
+| Originality | Combines agent handoffs, policy escalation, human approval, Band evidence, and SHA-256 audit sealing. |
+
+## API Endpoints
 
 | Method | Path | Description |
-|---|---|---|
-| POST | `/api/procurement/submit` | Submit a purchase request |
-| POST | `/api/procurement/submit-and-process` | Submit + run full agent pipeline |
-| GET | `/api/procurement/requests` | List all requests |
-| GET | `/api/procurement/requests/{id}` | Get request details + logs |
-| GET | `/api/procurement/requests/{id}/status` | Get current status |
-| GET | `/api/procurement/requests/{id}/audit` | Get audit packet |
-| POST | `/api/procurement/approve` | Submit human decision |
-| POST | `/api/webhook/band` | Band webhook receiver |
-| GET | `/health` | Health check |
+| --- | --- | --- |
+| GET | `/health` | Backend health |
+| GET | `/api/procurement/band/status` | Band credential and room readiness |
+| POST | `/api/procurement/submit-and-process` | Submit request and run full agent pipeline |
+| GET | `/api/procurement/requests` | List requests |
+| GET | `/api/procurement/requests/{id}` | Request details with logs and decision |
+| GET | `/api/procurement/requests/{id}/status` | Current status and agent actions |
+| GET | `/api/procurement/requests/{id}/audit` | Final audit packet |
+| POST | `/api/procurement/approve` | Human approval or rejection |
+| POST | `/api/webhook/band` | Band webhook/event receiver |
 
-## 📄 License
+## Repository Structure
 
-MIT — See [LICENSE](LICENSE) for details.
+```text
+agents/                  Agent runners
+backend/db/              Supabase persistence
+backend/routes/          FastAPI API routes
+backend/services/        Band, OpenRouter, audit helpers
+frontend/app/            Next.js pages
+frontend/components/     UI components
+supabase/migrations/     Database schema
+docs/BAND_SETUP.md       Required Band setup checklist
+```
 
----
+## License
 
-*Built for the [Band of Agents Hackathon](https://lablab.ai) — June 2026*
+MIT

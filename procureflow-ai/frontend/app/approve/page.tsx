@@ -91,6 +91,58 @@ function toText(value: unknown, fallback = "Not available"): string {
   return fallback;
 }
 
+function stripMarkdown(value: string): string {
+  return value
+    .replace(/\*\*/g, "")
+    .replace(/^- /, "")
+    .trim();
+}
+
+function FormattedSummary({ text }: { text: string }) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return <span>Approval summary is still being generated.</span>;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {lines.map((line, index) => {
+        const clean = stripMarkdown(line);
+        const isHeading =
+          line.startsWith("**") ||
+          clean.endsWith(":") ||
+          clean.toLowerCase().includes("summary");
+        const isBullet = line.startsWith("- ");
+
+        if (isHeading) {
+          return (
+            <strong key={`${clean}-${index}`} style={{ color: "var(--text)" }}>
+              {clean.replace(/:$/, "")}
+            </strong>
+          );
+        }
+
+        return (
+          <div
+            key={`${clean}-${index}`}
+            style={{
+              color: "var(--text-muted)",
+              paddingLeft: isBullet ? 12 : 0,
+              borderLeft: isBullet ? "2px solid var(--border)" : "none",
+            }}
+          >
+            {clean}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ApprovePage() {
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -277,11 +329,16 @@ export default function ApprovePage() {
 
               <div
                 className="alert alert-info"
-                style={{ whiteSpace: "pre-wrap", marginBottom: 16 }}
+                style={{ marginBottom: 16 }}
               >
                 <strong>Approval summary:</strong>
                 <br />
-                {toText(approval.summary, "Approval summary is still being generated.")}
+                <FormattedSummary
+                  text={toText(
+                    approval.summary,
+                    "Approval summary is still being generated."
+                  )}
+                />
               </div>
 
               <div

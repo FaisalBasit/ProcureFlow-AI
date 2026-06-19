@@ -96,8 +96,28 @@ class ApprovalAgent:
 
         await self.db.update_request_status(request_id, "awaiting_approval")
         try:
-            await self.band.send_message(band_message, "ApprovalAgent")
+            band_result = await self.band.send_message(band_message, "ApprovalAgent")
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_posted",
+                output={
+                    "source_agent": "ApprovalAgent",
+                    "event_type": band_message["type"],
+                    "band_result": band_result,
+                },
+            )
         except BandClientError as e:
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_failed",
+                output={
+                    "source_agent": "ApprovalAgent",
+                    "event_type": band_message["type"],
+                    "error": str(e),
+                },
+            )
             print(f"Warning: Band communication failed: {e}")
 
         return {
@@ -182,8 +202,28 @@ class ApprovalAgent:
 
         await self.db.update_request_status(request_id, final_status)
         try:
-            await self.band.send_message(band_message, "ApprovalAgent")
+            band_result = await self.band.send_message(band_message, "ApprovalAgent")
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_posted",
+                output={
+                    "source_agent": "ApprovalAgent",
+                    "event_type": band_message["type"],
+                    "band_result": band_result,
+                },
+            )
         except BandClientError as e:
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_failed",
+                output={
+                    "source_agent": "ApprovalAgent",
+                    "event_type": band_message["type"],
+                    "error": str(e),
+                },
+            )
             print(f"Warning: Band communication failed: {e}")
 
         return {

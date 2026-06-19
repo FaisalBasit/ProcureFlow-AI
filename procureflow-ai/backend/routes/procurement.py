@@ -16,6 +16,7 @@ from agents.risk_agent import RiskAgent
 from agents.policy_agent import PolicyAgent
 from agents.approval_agent import ApprovalAgent
 from backend.db.supabase_client import SupabaseDBClient
+from backend.services.band_client import BandClient, BandClientError
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
@@ -106,6 +107,62 @@ async def list_requests(status: Optional[str] = None):
         return {"requests": requests}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/band/status")
+async def get_band_status():
+    """Check whether the configured Band room is reachable with agent credentials."""
+    agent_names = ["IntakeAgent", "RiskAgent", "PolicyAgent", "ApprovalAgent"]
+    try:
+        band = BandClient()
+        agent_profiles = {}
+        for agent_name in agent_names:
+            agent_profiles[agent_name] = await band.get_agent_profile(agent_name)
+
+        participants = await band.get_participants("IntakeAgent")
+        messages = await band.get_messages(limit=5)
+        context_by_agent = {}
+        for agent_name in agent_names:
+            room_context = await band.get_room_context(agent_name)
+            context_items = room_context.get("context", {}).get("data", [])
+            context_by_agent[agent_name] = {
+                "count": len(context_items),
+                "sample": [
+                    {
+                        "sender_name": item.get("sender_name"),
+                        "message_type": item.get("message_type"),
+                        "content": item.get("content"),
+                    }
+                    for item in context_items[:5]
+                ],
+            }
+
+        return {
+            "connected": True,
+            "room_id": band.room_id,
+            "agent_profiles": agent_profiles,
+            "participant_count": len(participants),
+            "participants": participants,
+            "message_sample_count": len(messages),
+            "context_by_agent": context_by_agent,
+            "required_agents": [
+                "ProcureFlow Intake Agent",
+                "ProcureFlow Risk Agent",
+                "ProcureFlow Policy Agent",
+                "ProcureFlow Approval Agent",
+            ],
+        }
+    except BandClientError as e:
+        return {
+            "connected": False,
+            "error": str(e),
+            "next_steps": [
+                "Create four External/Remote Agents in Band.",
+                "Add each remote agent to the target chat room.",
+                "Paste each one-time Agent API key into .env.",
+                "Restart the backend and resubmit a purchase request.",
+            ],
+        }
 
 
 @router.get("/requests/{request_id}")

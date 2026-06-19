@@ -105,8 +105,47 @@ class PolicyAgent:
 
         await self.db.update_request_status(request_id, next_status)
         try:
-            await self.band.send_message(band_message, "PolicyAgent")
+            band_result = await self.band.send_message(band_message, "PolicyAgent")
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_posted",
+                output={
+                    "source_agent": "PolicyAgent",
+                    "event_type": band_message["type"],
+                    "band_result": band_result,
+                },
+            )
+            handoff_result = await self.band.send_handoff_message(
+                source_agent_name="PolicyAgent",
+                target_agent_name="ApprovalAgent",
+                handoff=(
+                    f"Policy verdict for request {request_id} is {verdict}. "
+                    f"Human-visible: {human_visible}. "
+                    "Please prepare the approval memo and decision packet."
+                ),
+            )
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_handoff_posted",
+                output={
+                    "source_agent": "PolicyAgent",
+                    "target_agent": "ApprovalAgent",
+                    "band_result": handoff_result,
+                },
+            )
         except BandClientError as e:
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_failed",
+                output={
+                    "source_agent": "PolicyAgent",
+                    "event_type": band_message["type"],
+                    "error": str(e),
+                },
+            )
             print(f"Warning: Band communication failed: {e}")
 
         return {

@@ -126,9 +126,48 @@ class IntakeAgent:
 
         await self.db.update_request_status(request_id, "risk_assessment")
         try:
-            await self.band.send_message(band_message, "IntakeAgent")
+            band_result = await self.band.send_message(band_message, "IntakeAgent")
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_posted",
+                output={
+                    "source_agent": "IntakeAgent",
+                    "event_type": band_message["type"],
+                    "band_result": band_result,
+                },
+            )
+            handoff_result = await self.band.send_handoff_message(
+                source_agent_name="IntakeAgent",
+                target_agent_name="RiskAgent",
+                handoff=(
+                    f"Request {request_id} is parsed and ready for vendor risk analysis. "
+                    f"Vendor: {parsed['vendor_name']}; amount: ${parsed['amount']:,.2f}; "
+                    f"category: {parsed['category']}."
+                ),
+            )
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_handoff_posted",
+                output={
+                    "source_agent": "IntakeAgent",
+                    "target_agent": "RiskAgent",
+                    "band_result": handoff_result,
+                },
+            )
         except BandClientError as e:
             # Still return the request even if Band fails (degraded mode)
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_failed",
+                output={
+                    "source_agent": "IntakeAgent",
+                    "event_type": band_message["type"],
+                    "error": str(e),
+                },
+            )
             print(f"Warning: Band communication failed: {e}")
 
         return {

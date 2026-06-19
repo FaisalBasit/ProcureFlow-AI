@@ -73,8 +73,48 @@ class RiskAgent:
 
         await self.db.update_request_status(request_id, "policy_check")
         try:
-            await self.band.send_message(band_message, "RiskAgent")
+            band_result = await self.band.send_message(band_message, "RiskAgent")
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_posted",
+                output={
+                    "source_agent": "RiskAgent",
+                    "event_type": band_message["type"],
+                    "band_result": band_result,
+                },
+            )
+            handoff_result = await self.band.send_handoff_message(
+                source_agent_name="RiskAgent",
+                target_agent_name="PolicyAgent",
+                handoff=(
+                    f"Risk report for request {request_id} is complete. "
+                    f"Risk level: {risk_report.get('risk_level', 'medium')}; "
+                    f"score: {risk_report.get('risk_score', 5)}/10. "
+                    "Please run procurement policy compliance."
+                ),
+            )
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_handoff_posted",
+                output={
+                    "source_agent": "RiskAgent",
+                    "target_agent": "PolicyAgent",
+                    "band_result": handoff_result,
+                },
+            )
         except BandClientError as e:
+            await self.db.log_agent_action(
+                request_id=request_id,
+                agent_name="BandBridge",
+                action="band_event_failed",
+                output={
+                    "source_agent": "RiskAgent",
+                    "event_type": band_message["type"],
+                    "error": str(e),
+                },
+            )
             print(f"Warning: Band communication failed: {e}")
 
         return {
