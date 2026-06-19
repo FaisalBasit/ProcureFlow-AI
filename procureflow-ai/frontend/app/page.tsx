@@ -112,6 +112,12 @@ export default function Home() {
                         <td>{(result.policy_check as Record<string, unknown>)?.status as string}</td>
                       </tr>
                       <tr>
+                        <td style={{ color: "var(--text-muted)" }}>Open-Source Review</td>
+                        <td>
+                          {(result.open_source_review as Record<string, unknown>)?.status as string || "N/A"}
+                        </td>
+                      </tr>
+                      <tr>
                         <td style={{ color: "var(--text-muted)" }}>Approval Status</td>
                         <td>
                           {(result.approval as Record<string, unknown>)?.status as string || "N/A"}

@@ -91,6 +91,16 @@ function toText(value: unknown, fallback = "Not available"): string {
   return fallback;
 }
 
+function providerText(output: Record<string, unknown>): string {
+  const provider = output.model_provider;
+  if (!provider || typeof provider !== "object") return "";
+  const meta = provider as Record<string, unknown>;
+  const name = typeof meta.provider === "string" ? meta.provider : "";
+  const model = typeof meta.model === "string" ? meta.model : "";
+  if (!name && !model) return "";
+  return [name, model].filter(Boolean).join(" / ");
+}
+
 function stripMarkdown(value: string): string {
   return value
     .replace(/\*\*/g, "")
@@ -285,6 +295,10 @@ export default function ApprovePage() {
         requests.map((req) => {
           const risk = latestOutput(req.agent_logs, "RiskAgent");
           const policy = latestOutput(req.agent_logs, "PolicyAgent");
+          const openSourceReview = latestOutput(
+            req.agent_logs,
+            "FeatherlessReviewAgent"
+          );
           const approval = latestOutput(
             req.agent_logs,
             "ApprovalAgent",
@@ -313,17 +327,56 @@ export default function ApprovePage() {
                 <span className="badge badge-pending">Awaiting Approval</span>
               </div>
 
-              <div className="grid grid-2" style={{ marginBottom: 16 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  gap: 16,
+                  marginBottom: 16,
+                }}
+              >
                 <div className="alert alert-info" style={{ marginBottom: 0 }}>
                   <strong>Risk:</strong> {toText(risk.risk_level)}{" "}
                   {risk.risk_score ? `(${risk.risk_score}/10)` : ""}
                   <br />
                   <small>{toText(risk.recommendation, "No risk recommendation recorded.")}</small>
+                  {providerText(risk) && (
+                    <>
+                      <br />
+                      <small>Model: {providerText(risk)}</small>
+                    </>
+                  )}
                 </div>
                 <div className="alert alert-info" style={{ marginBottom: 0 }}>
                   <strong>Policy:</strong> {toText(policy.verdict)}
                   <br />
                   <small>{toText(policy.notes, "No policy notes recorded.")}</small>
+                  {providerText(policy) && (
+                    <>
+                      <br />
+                      <small>Model: {providerText(policy)}</small>
+                    </>
+                  )}
+                </div>
+                <div className="alert alert-info" style={{ marginBottom: 0 }}>
+                  <strong>Open-source review:</strong>{" "}
+                  {toText(openSourceReview.review_verdict, "Pending")}
+                  {openSourceReview.confidence !== undefined
+                    ? ` (${toText(openSourceReview.confidence)} confidence)`
+                    : ""}
+                  <br />
+                  <small>
+                    {toText(
+                      openSourceReview.recommendation,
+                      "Featherless review is pending or not configured."
+                    )}
+                  </small>
+                  {providerText(openSourceReview) && (
+                    <>
+                      <br />
+                      <small>Model: {providerText(openSourceReview)}</small>
+                    </>
+                  )}
                 </div>
               </div>
 

@@ -20,6 +20,7 @@ AGENT_DISPLAY_NAMES = {
     "IntakeAgent": "ProcureFlow Intake Agent",
     "RiskAgent": "ProcureFlow Risk Agent",
     "PolicyAgent": "ProcureFlow Policy Agent",
+    "FeatherlessReviewAgent": "ProcureFlow Featherless Review Agent",
     "ApprovalAgent": "ProcureFlow Approval Agent",
 }
 
@@ -38,13 +39,16 @@ class BandClient:
             or os.getenv("BAND_INTAKE_API_KEY")
             or os.getenv("BAND_RISK_API_KEY")
             or os.getenv("BAND_POLICY_API_KEY")
+            or os.getenv("BAND_FEATHERLESS_REVIEW_API_KEY")
+            or os.getenv("BAND_FEATHERLESS_API_KEY")
             or os.getenv("BAND_APPROVAL_API_KEY")
         )
         self.room_id = room_id or BAND_ROOM_ID
         if not self.api_key:
             raise BandClientError(
                 "BAND_API_KEY or per-agent Band API keys must be set "
-                "(BAND_INTAKE_API_KEY, BAND_RISK_API_KEY, BAND_POLICY_API_KEY, BAND_APPROVAL_API_KEY)"
+                "(BAND_INTAKE_API_KEY, BAND_RISK_API_KEY, BAND_POLICY_API_KEY, "
+                "BAND_FEATHERLESS_REVIEW_API_KEY, BAND_APPROVAL_API_KEY)"
             )
         if not self.room_id:
             raise BandClientError("BAND_ROOM_ID is not set")
@@ -74,7 +78,13 @@ class BandClient:
 
     def _message_type(self, content: Dict[str, Any]) -> str:
         event_type = content.get("type", "task")
-        if event_type in ("risk_report", "policy_verdict", "approval_summary", "final_decision"):
+        if event_type in (
+            "risk_report",
+            "policy_verdict",
+            "featherless_review",
+            "approval_summary",
+            "final_decision",
+        ):
             return "tool_result"
         if event_type in ("error", "band_error"):
             return "error"

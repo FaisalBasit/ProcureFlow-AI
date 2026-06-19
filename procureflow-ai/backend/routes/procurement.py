@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from agents.intake_agent import IntakeAgent
 from agents.risk_agent import RiskAgent
 from agents.policy_agent import PolicyAgent
+from agents.featherless_review_agent import FeatherlessReviewAgent
 from agents.approval_agent import ApprovalAgent
 from backend.db.supabase_client import SupabaseDBClient
 from backend.services.band_client import BandClient, BandClientError
@@ -38,6 +39,7 @@ class ApprovalDecision(BaseModel):
 intake_agent = IntakeAgent()
 risk_agent = RiskAgent()
 policy_agent = PolicyAgent()
+featherless_review_agent = FeatherlessReviewAgent()
 approval_agent = ApprovalAgent()
 db_client = SupabaseDBClient()
 
@@ -83,7 +85,12 @@ async def submit_and_process(req: PurchaseRequest):
         # Step 3: Policy Check
         policy_result = await policy_agent.check_compliance(request_id)
 
-        # Step 4: Prepare for Approval (if human-visible)
+        # Step 4: Independent open-source model review (if human-visible)
+        featherless_review_result = None
+        if policy_result.get("human_visible", True):
+            featherless_review_result = await featherless_review_agent.review_request(request_id)
+
+        # Step 5: Prepare for Approval (if human-visible)
         approval_result = None
         if policy_result.get("human_visible", True):
             approval_result = await approval_agent.prepare_for_approval(request_id)
@@ -93,6 +100,7 @@ async def submit_and_process(req: PurchaseRequest):
             "intake": intake_result,
             "risk_assessment": risk_result,
             "policy_check": policy_result,
+            "open_source_review": featherless_review_result,
             "approval": approval_result,
         }
     except Exception as e:
@@ -113,11 +121,26 @@ async def list_requests(status: Optional[str] = None):
 async def get_band_status():
     """Check whether the configured Band room is reachable with agent credentials."""
     agent_names = ["IntakeAgent", "RiskAgent", "PolicyAgent", "ApprovalAgent"]
+    featherless_band_configured = bool(
+        os.getenv("BAND_FEATHERLESS_REVIEW_AGENT_API_KEY")
+        or os.getenv("BAND_FEATHERLESS_REVIEW_API_KEY")
+        or os.getenv("BAND_FEATHERLESS_API_KEY")
+    )
     try:
         band = BandClient()
         agent_profiles = {}
         for agent_name in agent_names:
             agent_profiles[agent_name] = await band.get_agent_profile(agent_name)
+
+        optional_agent_profiles = {}
+        optional_agent_errors = {}
+        if featherless_band_configured:
+            try:
+                optional_agent_profiles["FeatherlessReviewAgent"] = await band.get_agent_profile(
+                    "FeatherlessReviewAgent"
+                )
+            except BandClientError as e:
+                optional_agent_errors["FeatherlessReviewAgent"] = str(e)
 
         participants = await band.get_participants("IntakeAgent")
         messages = await band.get_messages(limit=5)
@@ -141,6 +164,9 @@ async def get_band_status():
             "connected": True,
             "room_id": band.room_id,
             "agent_profiles": agent_profiles,
+            "optional_agent_profiles": optional_agent_profiles,
+            "optional_agent_errors": optional_agent_errors,
+            "optional_partner_agent_configured": featherless_band_configured,
             "participant_count": len(participants),
             "participants": participants,
             "message_sample_count": len(messages),
@@ -150,6 +176,9 @@ async def get_band_status():
                 "ProcureFlow Risk Agent",
                 "ProcureFlow Policy Agent",
                 "ProcureFlow Approval Agent",
+            ],
+            "optional_partner_agents": [
+                "ProcureFlow Featherless Review Agent",
             ],
         }
     except BandClientError as e:

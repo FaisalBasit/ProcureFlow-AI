@@ -76,6 +76,12 @@ class SupabaseDBClient:
                     return "flagged_for_review" if verdict == "flagged" else "pending_approval"
                 return current_status
 
+            if agent_name == "FeatherlessReviewAgent" and action in (
+                "open_source_review_complete",
+                "open_source_review_unavailable",
+            ):
+                return "pending_approval"
+
             if agent_name == "RiskAgent" and action == "risk_analysis_complete":
                 return "policy_check"
 

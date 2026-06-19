@@ -19,6 +19,7 @@ const AGENT_LABELS: Record<string, string> = {
   IntakeAgent: "Intake",
   RiskAgent: "Risk",
   PolicyAgent: "Policy",
+  FeatherlessReviewAgent: "Open-source Review",
   ApprovalAgent: "Approval",
   WebhookRouter: "Router",
 };
@@ -27,6 +28,7 @@ const AGENT_COLORS: Record<string, "active" | "success" | "danger" | "warning"> 
   IntakeAgent: "active",
   RiskAgent: "warning",
   PolicyAgent: "warning",
+  FeatherlessReviewAgent: "active",
   ApprovalAgent: "success",
 };
 
@@ -111,6 +113,10 @@ export default function AgentTimeline({ requestId, logs }: AgentTimelineProps) {
               ? String(output.risk_score)
               : "n/a";
           const verdict = typeof output.verdict === "string" ? output.verdict : "";
+          const reviewVerdict =
+            typeof output.review_verdict === "string" ? output.review_verdict : "";
+          const recommendation =
+            typeof output.recommendation === "string" ? output.recommendation : "";
 
           return (
             <div key={log.id} className="timeline-item">
@@ -177,6 +183,34 @@ export default function AgentTimeline({ requestId, logs }: AgentTimelineProps) {
                     >
                       {verdict}
                     </span>
+                  </div>
+                )}
+
+                {reviewVerdict && (
+                  <div style={{ marginTop: 8 }}>
+                    <span
+                      className={`badge ${
+                        reviewVerdict === "concur"
+                          ? "badge-approved"
+                          : reviewVerdict === "reject"
+                          ? "badge-rejected"
+                          : "badge-review"
+                      }`}
+                    >
+                      Open-source review: {reviewVerdict}
+                    </span>
+                    {recommendation && (
+                      <p
+                        style={{
+                          marginTop: 8,
+                          marginBottom: 0,
+                          color: "var(--text-muted)",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        {recommendation}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

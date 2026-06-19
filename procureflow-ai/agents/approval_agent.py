@@ -47,6 +47,7 @@ class ApprovalAgent:
         intake_output = {}
         risk_output = {}
         policy_output = {}
+        open_source_review = {}
 
         for log in logs:
             if log["agent_name"] == "IntakeAgent":
@@ -55,6 +56,8 @@ class ApprovalAgent:
                 risk_output = log["output"]
             elif log["agent_name"] == "PolicyAgent":
                 policy_output = log["output"]
+            elif log["agent_name"] == "FeatherlessReviewAgent":
+                open_source_review = log["output"]
 
         # Build context for AI summary
         context = {
@@ -65,6 +68,7 @@ class ApprovalAgent:
             "justification": request["justification"],
             "risk_assessment": risk_output,
             "policy_compliance": policy_output,
+            "open_source_review": open_source_review,
         }
 
         # Generate AI summary
@@ -81,6 +85,7 @@ class ApprovalAgent:
             output={
                 "summary": summary,
                 "context": context,
+                "model_provider": self.ai.provider_metadata(),
             },
         )
 
@@ -91,6 +96,7 @@ class ApprovalAgent:
             "vendor_name": request["vendor_name"],
             "amount": request["amount"],
             "summary": summary,
+            "model_provider": self.ai.provider_metadata(),
             "status": "awaiting_human_approval",
         }
 
@@ -146,6 +152,7 @@ class ApprovalAgent:
         intake_output = {}
         risk_output = {}
         policy_output = {}
+        open_source_review = {}
         summary_output = {}
 
         for log in logs:
@@ -155,6 +162,8 @@ class ApprovalAgent:
                 risk_output = log["output"]
             elif log["agent_name"] == "PolicyAgent":
                 policy_output = log["output"]
+            elif log["agent_name"] == "FeatherlessReviewAgent":
+                open_source_review = log["output"]
             elif log["agent_name"] == "ApprovalAgent":
                 summary_output = log["output"]
 
@@ -169,6 +178,7 @@ class ApprovalAgent:
             justification=request["justification"],
             risk_report=risk_output,
             policy_verdict=policy_output,
+            open_source_review=open_source_review,
             approval_summary=summary_output.get("summary", ""),
             human_decision=final_status,
             signed_by=signed_by,

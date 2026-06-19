@@ -32,6 +32,27 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
+function normalizeOutput(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === "object" && parsed ? parsed as Record<string, unknown> : {};
+    } catch {
+      return { raw: value };
+    }
+  }
+  return typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function latestOutput(
+  logs: Record<string, unknown>[],
+  agentName: string,
+): Record<string, unknown> {
+  const matches = logs.filter((log) => log.agent_name === agentName);
+  return normalizeOutput(matches[matches.length - 1]?.output);
+}
+
 export default function AuditPacket({
   request,
   decision,
@@ -41,6 +62,9 @@ export default function AuditPacket({
   const status = asText(request.status, "pending");
   const auditHash = asText(decision?.audit_hash, "");
   const humanApproved = decision?.human_approved === true;
+  const risk = latestOutput(agentLogs, "RiskAgent");
+  const policy = latestOutput(agentLogs, "PolicyAgent");
+  const openSourceReview = latestOutput(agentLogs, "FeatherlessReviewAgent");
 
   return (
     <div>
@@ -179,6 +203,40 @@ export default function AuditPacket({
                 No decision recorded yet.
               </p>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">Decision Evidence</h2>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 16,
+          }}
+        >
+          <div className="alert alert-info" style={{ marginBottom: 0 }}>
+            <strong>AI/ML risk:</strong> {asText(risk.risk_level)}{" "}
+            {risk.risk_score ? `(${asText(risk.risk_score)}/10)` : ""}
+            <br />
+            <small>{asText(risk.recommendation, "No risk recommendation recorded.")}</small>
+          </div>
+          <div className="alert alert-info" style={{ marginBottom: 0 }}>
+            <strong>Policy verdict:</strong> {asText(policy.verdict)}
+            <br />
+            <small>{asText(policy.notes, "No policy notes recorded.")}</small>
+          </div>
+          <div className="alert alert-info" style={{ marginBottom: 0 }}>
+            <strong>Featherless review:</strong>{" "}
+            {asText(openSourceReview.review_verdict, "Pending")}
+            <br />
+            <small>
+              {asText(
+                openSourceReview.recommendation,
+                "Open-source model review is pending or not configured."
+              )}
+            </small>
           </div>
         </div>
       </div>

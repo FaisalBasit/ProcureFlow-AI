@@ -63,6 +63,7 @@ class PolicyAgent:
                 "policy_checks": [],
                 "verdict": "flagged",
                 "notes": f"Policy check failed due to AI error: {str(e)}",
+                "model_provider": self.ai.provider_metadata(),
             }
 
         # Determine next status based on verdict
@@ -87,6 +88,7 @@ class PolicyAgent:
                 "policy_checks": policy_result.get("policy_checks", []),
                 "notes": policy_result.get("notes", ""),
                 "human_visible": human_visible,
+                "model_provider": policy_result.get("model_provider", self.ai.provider_metadata()),
             },
         )
 
@@ -99,6 +101,7 @@ class PolicyAgent:
             "verdict": verdict,
             "policy_checks": policy_result.get("policy_checks", []),
             "notes": policy_result.get("notes", ""),
+            "model_provider": policy_result.get("model_provider", self.ai.provider_metadata()),
             "status": next_status,
             "human_visible": human_visible,
         }
@@ -116,13 +119,24 @@ class PolicyAgent:
                     "band_result": band_result,
                 },
             )
+            has_featherless_band_agent = (
+                os.getenv("BAND_FEATHERLESS_REVIEW_AGENT_API_KEY")
+                or os.getenv("BAND_FEATHERLESS_REVIEW_API_KEY")
+                or os.getenv("BAND_FEATHERLESS_API_KEY")
+            )
+            target_agent = "FeatherlessReviewAgent" if has_featherless_band_agent else "ApprovalAgent"
+            next_step = (
+                "Please run the independent Featherless open-source review before approval."
+                if has_featherless_band_agent
+                else "The backend will run the Featherless open-source review, then prepare the approval memo."
+            )
             handoff_result = await self.band.send_handoff_message(
                 source_agent_name="PolicyAgent",
-                target_agent_name="ApprovalAgent",
+                target_agent_name=target_agent,
                 handoff=(
                     f"Policy verdict for request {request_id} is {verdict}. "
                     f"Human-visible: {human_visible}. "
-                    "Please prepare the approval memo and decision packet."
+                    f"{next_step}"
                 ),
             )
             await self.db.log_agent_action(
@@ -131,7 +145,7 @@ class PolicyAgent:
                 action="band_handoff_posted",
                 output={
                     "source_agent": "PolicyAgent",
-                    "target_agent": "ApprovalAgent",
+                    "target_agent": target_agent,
                     "band_result": handoff_result,
                 },
             )

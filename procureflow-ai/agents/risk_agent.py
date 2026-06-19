@@ -1,6 +1,6 @@
 """
 @RiskAgent — ProcureFlow AI
-Scores vendor risk using AI/ML API (OpenRouter).
+Scores vendor risk using AI/ML API-compatible reasoning.
 Fetches request from Band room, runs risk analysis, posts result back.
 """
 
@@ -49,6 +49,7 @@ class RiskAgent:
                 "risk_level": "medium",
                 "concerns": [f"AI analysis unavailable: {str(e)}"],
                 "recommendation": "Manual review required due to AI service error.",
+                "model_provider": self.ai.provider_metadata(),
             }
 
         # Log to database
@@ -68,6 +69,7 @@ class RiskAgent:
             "risk_level": risk_report.get("risk_level", "medium"),
             "concerns": risk_report.get("concerns", []),
             "recommendation": risk_report.get("recommendation", ""),
+            "model_provider": risk_report.get("model_provider", self.ai.provider_metadata()),
             "status": "pending_policy_check",
         }
 
